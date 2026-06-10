@@ -6,7 +6,7 @@ module.exports = (sequelize, DataTypes) => {
         static associate(models) {
             User.hasMany(models.Reservation, { foreignKey: 'user_id' });
             User.hasMany(models.DeliveryOrder, { foreignKey: 'user_id' });
-            User.hasMany(models.Pesanan, { foreignKey: 'user_id' }); // tambahan
+            User.hasMany(models.Pesanan, { foreignKey: 'user_id' });
         }
     }
 
@@ -23,6 +23,7 @@ module.exports = (sequelize, DataTypes) => {
     }, {
         sequelize,
         modelName: 'User',
+        tableName: 'Users'
     });
 
     return User;

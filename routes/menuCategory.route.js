@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken, verifyAdmin } = require('../middlewares/auth');
+const { verifyAdmin } = require('../middlewares/auth');
 const menuCategoryController = require('../controllers/menuCategory.controller');
 
 router.get('/', menuCategoryController.getCategories);

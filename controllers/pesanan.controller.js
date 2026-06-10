@@ -2,6 +2,7 @@ const Validator = require('fastest-validator');
 const v = new Validator();
 const { Pesanan, Menu, User } = require('../models');
 const { response } = require('../helpers/response.formatter');
+const PDFDocument = require('pdfkit');
 
 module.exports = {
     createPesanan: async (req, res) => {
@@ -105,6 +106,58 @@ module.exports = {
             return res.status(200).json(response(200, 'Pesanan berhasil dibatalkan'));
         } catch (error) {
             return res.status(500).json(response(500, 'Server Error', error.message));
+        }
+    },
+
+    // EXPORT PDF ONLY
+    exportPesananPdf: async (req, res) => {
+        try {
+            const whereClause = req.user.role === 'admin' ? {} : { user_id: req.user.userId };
+            
+            const data = await Pesanan.findAll({
+                where: whereClause,
+                include: [
+                    { model: Menu, as: 'Menu' },
+                    { model: User, as: 'User' }
+                ],
+                order: [['createdAt', 'DESC']]
+            });
+
+            const doc = new PDFDocument({ margin: 30 });
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', 'attachment; filename=laporan_pesanan.pdf');
+            doc.pipe(res);
+
+            doc.fontSize(18).text('LAPORAN PESANAN', { align: 'center' });
+            doc.fontSize(10).text(`Tanggal: ${new Date().toLocaleString('id-ID')}`, { align: 'center' });
+            doc.moveDown();
+
+            let y = doc.y;
+            doc.font('Helvetica-Bold');
+            doc.text('No', 40, y);
+            doc.text('Customer', 80, y);
+            doc.text('Menu', 180, y);
+            doc.text('Harga', 280, y);
+            doc.text('Status', 360, y);
+            doc.text('Tanggal', 430, y);
+            
+            y += 15;
+            doc.font('Helvetica');
+
+            data.forEach((item, i) => {
+                if (y > 750) { doc.addPage(); y = 50; }
+                doc.text(i + 1, 40, y);
+                doc.text(item.User?.name || '-', 80, y);
+                doc.text(item.Menu?.name || '-', 180, y);
+                doc.text(`Rp${Number(item.Menu?.price || 0).toLocaleString()}`, 280, y);
+                doc.text(item.status, 360, y);
+                doc.text(new Date(item.createdAt).toLocaleDateString(), 430, y);
+                y += 20;
+            });
+
+            doc.end();
+        } catch (error) {
+            res.status(500).json({ error: error.message });
         }
     }
 };

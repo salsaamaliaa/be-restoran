@@ -6,7 +6,6 @@ const reservationController = require('../controllers/reservation.controller');
 router.get('/', verifyToken, reservationController.getReservations);
 router.post('/', verifyToken, reservationController.createReservation);
 router.put('/:id/status', verifyToken, reservationController.updateReservationStatus);
-
 router.get('/export/pdf', verifyToken, reservationController.exportReservationsPdf);
 
 module.exports = router;

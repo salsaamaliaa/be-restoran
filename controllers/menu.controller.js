@@ -1,86 +1,39 @@
-const Validator = require('fastest-validator');
-const v = new Validator();
 const { Menu, MenuCategory } = require('../models');
 const { response } = require('../helpers/response.formatter');
-const { Op } = require('sequelize');
-const path = require('path');
-const fs = require('fs');
 
 module.exports = {
-    createMenu: async (req, res) => {
-        try {
-            const { category_id, name, description, price } = req.body;
-
-            const schema = {
-                category_id: { type: 'number', positive: true, integer: true },
-                name: { type: 'string', min: 2 },
-                description: { type: 'string', optional: true },
-                price: { type: 'number', positive: true }
-            };
-            const data = {
-                category_id: Number(category_id),
-                name,
-                description: description || '',
-                price: Number(price)
-            };
-            const validate = v.validate(data, schema);
-            if (validate.length > 0) {
-                return res.status(400).json(response(400, 'Validasi Error', validate));
-            }
-
-            if (!req.file) {
-                return res.status(400).json(response(400, 'Gambar menu wajib diupload'));
-            }
-
-            const category = await MenuCategory.findByPk(data.category_id);
-            if (!category) {
-                return res.status(400).json(response(400, 'Validasi Error', 'Kategori tidak ditemukan'));
-            }
-
-            // Simpan dengan path /uploads/nama_file
-            const imagePath = `/uploads/${req.file.filename}`;
-
-            const menu = await Menu.create({
-                category_id: data.category_id,
-                name: data.name,
-                description: data.description,
-                price: data.price,
-                image: imagePath,
-                is_available: true
-            });
-
-            const menuWithCategory = await Menu.findByPk(menu.id, { include: MenuCategory });
-            return res.status(201).json(response(201, 'Menu berhasil dibuat', menuWithCategory));
-        } catch (error) {
-            return res.status(500).json(response(500, 'Server Error', error.message));
-        }
-    },
-
     getMenus: async (req, res) => {
         try {
-            const { name, category_id, is_available } = req.query;
-
-            const whereClause = {};
-            if (name) whereClause.name = { [Op.like]: `%${name}%` };
-            if (category_id) whereClause.category_id = category_id;
-            if (is_available !== undefined) whereClause.is_available = is_available === 'true';
-
             const menus = await Menu.findAll({
-                where: whereClause,
-                include: [{ model: MenuCategory, attributes: ['id', 'name'] }],
+                include: [{ model: MenuCategory }],
                 order: [['name', 'ASC']]
             });
-
-            return res.status(200).json(response(200, 'Success', menus));
+            
+            // Format response agar image path benar
+            const formattedMenus = menus.map(menu => {
+                const menuData = menu.toJSON();
+                if (menuData.image) {
+                    if (!menuData.image.startsWith('http') && !menuData.image.startsWith('/uploads')) {
+                        menuData.image = `http://localhost:3000/uploads/${menuData.image}`;
+                    }
+                }
+                return menuData;
+            });
+            
+            return res.status(200).json({
+                status: 200,
+                message: 'Success',
+                data: formattedMenus
+            });
         } catch (error) {
+            console.error('Get menus error:', error);
             return res.status(500).json(response(500, 'Server Error', error.message));
         }
     },
 
-    detailMenu: async (req, res) => {
+    getMenuById: async (req, res) => {
         try {
-            const { id } = req.params;
-            const menu = await Menu.findByPk(id, {
+            const menu = await Menu.findByPk(req.params.id, {
                 include: [{ model: MenuCategory }]
             });
             if (!menu) {
@@ -92,43 +45,50 @@ module.exports = {
         }
     },
 
+    createMenu: async (req, res) => {
+        try {
+            const { category_id, name, description, price } = req.body;
+            
+            const menu = await Menu.create({
+                category_id: category_id,
+                name: name,
+                description: description || '',
+                price: price,
+                image: req.file ? req.file.filename : null,
+                is_available: true
+            });
+
+            return res.status(201).json(response(201, 'Menu berhasil dibuat', menu));
+        } catch (error) {
+            return res.status(500).json(response(500, 'Server Error', error.message));
+        }
+    },
+
     updateMenu: async (req, res) => {
         try {
             const { id } = req.params;
             const { category_id, name, description, price, is_available } = req.body;
 
-            const menuBefore = await Menu.findByPk(id);
-            if (!menuBefore) {
+            const menu = await Menu.findByPk(id);
+            if (!menu) {
                 return res.status(404).json(response(404, 'Menu tidak ditemukan'));
             }
 
-            if (req.file) {
-                const oldImage = menuBefore.image;
-                if (oldImage) {
-                    const oldFilename = oldImage.replace('/uploads/', '');
-                    const filePosition = path.join(__dirname, '../uploads', oldFilename);
-                    if (fs.existsSync(filePosition)) {
-                        fs.unlinkSync(filePosition);
-                    }
-                }
-            }
-
             const updateData = {
-                category_id: category_id ? Number(category_id) : menuBefore.category_id,
-                name: name || menuBefore.name,
-                description: description !== undefined ? description : menuBefore.description,
-                price: price ? Number(price) : menuBefore.price,
-                is_available: is_available !== undefined ? (is_available === 'true' || is_available === true) : menuBefore.is_available
+                category_id: category_id || menu.category_id,
+                name: name || menu.name,
+                description: description !== undefined ? description : menu.description,
+                price: price || menu.price,
+                is_available: is_available !== undefined ? is_available : menu.is_available
             };
 
             if (req.file) {
-                updateData.image = `/uploads/${req.file.filename}`;
+                updateData.image = req.file.filename;
             }
 
-            await Menu.update(updateData, { where: { id } });
+            await menu.update(updateData);
 
-            const updatedMenu = await Menu.findByPk(id, { include: MenuCategory });
-            return res.status(200).json(response(200, 'Menu berhasil diperbarui', updatedMenu));
+            return res.status(200).json(response(200, 'Menu berhasil diperbarui', menu));
         } catch (error) {
             return res.status(500).json(response(500, 'Server Error', error.message));
         }
@@ -141,20 +101,28 @@ module.exports = {
             if (!menu) {
                 return res.status(404).json(response(404, 'Menu tidak ditemukan'));
             }
+            await menu.destroy();
+            return res.status(200).json(response(200, 'Menu berhasil dihapus'));
+        } catch (error) {
+            return res.status(500).json(response(500, 'Server Error', error.message));
+        }
+    },
 
-            const image = menu.image;
-            if (image) {
-                const filename = image.replace('/uploads/', '');
-                const filePosition = path.join(__dirname, '../uploads', filename);
-                if (fs.existsSync(filePosition)) {
-                    fs.unlinkSync(filePosition);
-                }
+    updateAvailability: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { is_available } = req.body;
+
+            const menu = await Menu.findByPk(id);
+            if (!menu) {
+                return res.status(404).json(response(404, 'Menu tidak ditemukan'));
             }
 
-            await Menu.destroy({ where: { id } });
-            return res.status(200).json(response(200, 'Menu berhasil dihapus'));
+            await menu.update({ is_available: is_available });
+            return res.status(200).json(response(200, 'Status menu diperbarui', menu));
         } catch (error) {
             return res.status(500).json(response(500, 'Server Error', error.message));
         }
     }
 };
+
